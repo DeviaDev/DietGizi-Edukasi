@@ -8,6 +8,11 @@
    NUTRITION CALCULATOR STYLES
    =================================== */
 
+/* ===================================
+   NUTRITION CALCULATOR - USER FRIENDLY STYLES
+   Updated with better readability and visual hierarchy
+   =================================== */
+
 :root {
     --primary-color: #059669;
     --primary-dark: #047857;
@@ -35,6 +40,22 @@
     --radius-md: 8px;
     --radius-lg: 12px;
     --radius-xl: 16px;
+}
+
+/* ===================================
+   BASE STYLES
+   =================================== */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    line-height: 1.6;
+    color: var(--text-dark);
 }
 
 /* ===================================
@@ -295,6 +316,54 @@
 }
 
 /* ===================================
+   ALERTS
+   =================================== */
+
+.alert {
+    padding: 1rem 1.25rem;
+    border-radius: var(--radius-md);
+    margin-bottom: 1rem;
+    border-left: 4px solid;
+}
+
+.alert strong {
+    display: block;
+    margin-bottom: 0.5rem;
+}
+
+.alert ul {
+    margin: 0.5rem 0 0 1.5rem;
+}
+
+.alert li {
+    margin: 0.25rem 0;
+}
+
+.alert-info {
+    background: #dbeafe;
+    border-color: #3b82f6;
+    color: #1e40af;
+}
+
+.alert-warning {
+    background: #fef3c7;
+    border-color: #f59e0b;
+    color: #92400e;
+}
+
+.alert-success {
+    background: #d1fae5;
+    border-color: #10b981;
+    color: #065f46;
+}
+
+.alert-danger {
+    background: #fee2e2;
+    border-color: #ef4444;
+    color: #991b1b;
+}
+
+/* ===================================
    FORM ACTIONS
    =================================== */
 
@@ -385,6 +454,11 @@
     margin-bottom: 1.5rem;
 }
 
+.summary-highlight {
+    background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%);
+    border: 2px solid var(--primary-color);
+}
+
 .results-header {
     margin-bottom: 1.5rem;
     padding-bottom: 1rem;
@@ -408,11 +482,48 @@
     gap: 0.5rem;
 }
 
+.card-title-result .icon {
+    font-size: 1.5rem;
+}
+
+.card-subtitle {
+    color: var(--text-muted);
+    font-size: 0.9375rem;
+    margin-bottom: 1.5rem;
+    font-style: italic;
+}
+
 .results-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
     gap: 1.5rem;
     margin-bottom: 1.5rem;
+}
+
+/* ===================================
+   SUMMARY BOX
+   =================================== */
+
+.summary-box {
+    background: linear-gradient(135deg, #d1fae5, #a7f3d0);
+    padding: 1.5rem;
+    border-radius: var(--radius-lg);
+    margin: 1rem 0;
+}
+
+.summary-box h3 {
+    color: #065f46;
+    margin-bottom: 1rem;
+    font-size: 1.25rem;
+}
+
+.summary-box p {
+    margin: 0.5rem 0;
+    line-height: 1.8;
+}
+
+.summary-box strong {
+    color: var(--text-dark);
 }
 
 /* ===================================
@@ -430,17 +541,25 @@
     margin: 0.25rem;
 }
 
-.status-normal {
+.badge {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    border-radius: var(--radius-sm);
+    font-size: 0.875rem;
+    font-weight: 600;
+}
+
+.status-normal, .badge-success {
     background: #d1fae5;
     color: #065f46;
 }
 
-.status-warning {
+.status-warning, .badge-warning {
     background: #fef3c7;
     color: #92400e;
 }
 
-.status-danger {
+.status-danger, .badge-danger {
     background: #fee2e2;
     color: #991b1b;
 }
@@ -476,41 +595,321 @@
 }
 
 /* ===================================
+   NUTRITION GRID
+   =================================== */
+
+.nutrition-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    margin: 1rem 0;
+}
+
+.nutrition-card, .nutrition-item {
+    background: #f9fafb;
+    padding: 1rem;
+    border-radius: var(--radius-md);
+    text-align: center;
+    border-left: 4px solid var(--primary-color);
+}
+
+.nutrition-card strong, .nutrition-item strong {
+    display: block;
+    color: var(--text-muted);
+    font-size: 0.875rem;
+    margin-bottom: 0.5rem;
+}
+
+.nutrition-card .value, .nutrition-item span {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: var(--primary-color);
+    display: block;
+}
+
+.nutrition-card .subtext {
+    font-size: 0.75rem;
+    color: #9ca3af;
+    margin-top: 0.25rem;
+}
+
+/* ===================================
+   MEAL PLAN STYLES
+   =================================== */
+
+.meal-plan-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+    gap: 1.5rem;
+    margin: 1.5rem 0;
+}
+
+.meal-card {
+    background: white;
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    box-shadow: var(--shadow-md);
+    transition: all 0.3s ease;
+    border: 2px solid #fef3c7;
+}
+
+.meal-card:hover {
+    box-shadow: var(--shadow-lg);
+    transform: translateY(-3px);
+}
+
+.meal-card-header {
+    background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+    padding: 1.25rem;
+    text-align: center;
+}
+
+.meal-icon-large {
+    font-size: 2.5rem;
+    display: block;
+    margin-bottom: 0.5rem;
+}
+
+.meal-card-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #78350f;
+    margin: 0;
+}
+
+.meal-nutrition-summary {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.5rem;
+    padding: 1rem;
+    background: #fffbeb;
+    border-bottom: 2px solid #fef3c7;
+}
+
+.nutrition-badge {
+    text-align: center;
+    padding: 0.5rem;
+}
+
+.badge-label {
+    display: block;
+    font-size: 0.75rem;
+    color: #92400e;
+    font-weight: 600;
+    text-transform: uppercase;
+    margin-bottom: 0.25rem;
+}
+
+.badge-value {
+    display: block;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #b45309;
+    line-height: 1;
+}
+
+.badge-unit {
+    display: block;
+    font-size: 0.75rem;
+    color: #92400e;
+    margin-top: 0.25rem;
+}
+
+.meal-items-list {
+    padding: 1.25rem;
+}
+
+.meal-item-group {
+    margin-bottom: 1.25rem;
+}
+
+.meal-item-group:last-child {
+    margin-bottom: 0;
+}
+
+.meal-item-category {
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: #059669;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 2px solid #d1fae5;
+}
+
+.meal-items {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.meal-item {
+    display: grid;
+    grid-template-columns: 2fr 1.5fr 2fr;
+    gap: 0.75rem;
+    padding: 0.625rem 0;
+    border-bottom: 1px solid #f3f4f6;
+    font-size: 0.875rem;
+}
+
+.meal-item:last-child {
+    border-bottom: none;
+}
+
+.item-name {
+    font-weight: 600;
+    color: #1f2937;
+}
+
+.item-portion {
+    color: #6b7280;
+    text-align: center;
+    font-weight: 500;
+}
+
+.item-note {
+    color: #9ca3af;
+    font-size: 0.8125rem;
+    font-style: italic;
+}
+
+/* Tips Grid */
+.tips-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.tip-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    background: white;
+    border-radius: var(--radius-md);
+    border-left: 3px solid #3b82f6;
+}
+
+.tip-icon {
+    font-size: 1.5rem;
+    flex-shrink: 0;
+}
+
+.tip-text {
+    flex: 1;
+    color: #1f2937;
+    font-size: 0.9375rem;
+    line-height: 1.5;
+}
+
+/* Exchange Guide */
+.exchange-guide {
+    margin-top: 1rem;
+    display: grid;
+    gap: 0.75rem;
+}
+
+.exchange-item {
+    background: white;
+    padding: 1rem;
+    border-radius: var(--radius-md);
+    border-left: 3px solid #3b82f6;
+}
+
+.exchange-item strong {
+    display: block;
+    color: #1e40af;
+    margin-bottom: 0.5rem;
+    font-size: 0.9375rem;
+}
+
+.exchange-item p {
+    margin: 0;
+    color: #374151;
+    font-size: 0.875rem;
+    line-height: 1.6;
+}
+
+.meal-section {
+    background: #fefce8;
+    padding: 1.5rem;
+    border-radius: var(--radius-lg);
+    margin: 1.5rem 0;
+    border-left: 5px solid #eab308;
+}
+
+.meal-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+.meal-icon {
+    font-size: 2rem;
+}
+
+.meal-title {
+    font-size: 1.3rem;
+    font-weight: bold;
+    color: #854d0e;
+}
+
+.meal-target {
+    background: white;
+    padding: 0.75rem 1rem;
+    border-radius: var(--radius-md);
+    margin: 1rem 0;
+    font-size: 0.9rem;
+    border: 1px solid #fde047;
+}
+
+.meal-target strong {
+    color: #854d0e;
+}
+
+/* ===================================
    TABLES
    =================================== */
 
-.data-table {
+.data-table, table {
     width: 100%;
     border-collapse: collapse;
     margin: 1rem 0;
 }
 
 .data-table th,
-.data-table td {
+.data-table td,
+table th,
+table td {
     padding: 0.75rem 1rem;
     text-align: left;
     border-bottom: 1px solid var(--border-color);
 }
 
-.data-table th {
-    background: var(--bg-gray);
+.data-table th,
+table th {
+    background: var(--primary-color);
+    color: white;
     font-weight: 600;
-    color: var(--text-dark);
     font-size: 0.875rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
 }
 
-.data-table td {
+.data-table td,
+table td {
     font-size: 0.9375rem;
     color: var(--text-dark);
 }
 
-.data-table tr:last-child td {
+.data-table tr:last-child td,
+table tr:last-child td {
     border-bottom: none;
 }
 
-.data-table tr:hover {
+.data-table tr:hover,
+table tr:hover {
     background: var(--bg-gray);
 }
 
@@ -518,13 +917,167 @@
    RECOMMENDATIONS
    =================================== */
 
+.recommendations-grid {
+    display: grid;
+    gap: 1.5rem;
+    margin-top: 1rem;
+}
+
+.recommendation-card {
+    background: white;
+    border-radius: var(--radius-lg);
+    padding: 1.5rem;
+    box-shadow: var(--shadow-sm);
+    border: 2px solid #f0fdf4;
+    transition: all 0.3s ease;
+}
+
+.recommendation-card:hover {
+    box-shadow: var(--shadow-md);
+    border-color: var(--primary-light);
+}
+
+.recommendation-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1.25rem;
+    padding-bottom: 1rem;
+    border-bottom: 2px solid #f0fdf4;
+}
+
+.rec-icon {
+    font-size: 2rem;
+    flex-shrink: 0;
+}
+
+.rec-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--primary-dark);
+    margin: 0;
+    flex: 1;
+}
+
+.rec-condition {
+    background: #fef3c7;
+    padding: 0.75rem 1rem;
+    border-radius: var(--radius-md);
+    margin-bottom: 1rem;
+    border-left: 3px solid #f59e0b;
+}
+
+.condition-label {
+    font-weight: 600;
+    color: #92400e;
+    margin-right: 0.5rem;
+}
+
+.condition-value {
+    color: #78350f;
+}
+
+.rec-details {
+    background: #f0fdf4;
+    padding: 1rem;
+    border-radius: var(--radius-md);
+    margin-bottom: 1rem;
+}
+
+.detail-item {
+    display: flex;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid #d1fae5;
+}
+
+.detail-item:last-child {
+    border-bottom: none;
+}
+
+.detail-key {
+    font-weight: 600;
+    color: var(--text-dark);
+    min-width: 140px;
+}
+
+.detail-value {
+    color: var(--primary-color);
+    font-weight: 600;
+}
+
+.rec-sources {
+    background: #fffbeb;
+    padding: 1rem;
+    border-radius: var(--radius-md);
+    margin-bottom: 1rem;
+    border-left: 3px solid #f59e0b;
+}
+
+.sources-title {
+    font-weight: 700;
+    color: #92400e;
+    margin-bottom: 0.75rem;
+    font-size: 1rem;
+}
+
+.source-item {
+    padding: 0.5rem 0;
+    font-size: 0.9375rem;
+    line-height: 1.6;
+}
+
+.source-item strong {
+    color: #78350f;
+    display: inline-block;
+    min-width: 120px;
+}
+
+.source-item span {
+    color: #451a03;
+}
+
+.rec-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.rec-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    margin-bottom: 0.5rem;
+    background: #f9fafb;
+    border-radius: var(--radius-md);
+    transition: all 0.2s;
+}
+
+.rec-item:hover {
+    background: #f0fdf4;
+    transform: translateX(3px);
+}
+
+.rec-check {
+    color: var(--success-color);
+    font-weight: 700;
+    font-size: 1.125rem;
+    flex-shrink: 0;
+}
+
+.rec-text {
+    color: var(--text-dark);
+    line-height: 1.6;
+    font-size: 0.9375rem;
+}
+
 .recommendation-section {
     margin-bottom: 2rem;
 }
 
 .recommendation-category {
     background: var(--primary-light);
-    padding: 1rem 1.5rem;
+    padding: 1.25rem 1.5rem;
     border-radius: var(--radius-md);
     margin-bottom: 1rem;
     border-left: 4px solid var(--primary-color);
@@ -560,31 +1113,61 @@
     font-size: 1.125rem;
 }
 
-.nutrition-grid {
+/* ===================================
+   TIPS BOX
+   =================================== */
+
+.tips-box {
+    background: #e0e7ff;
+    padding: 1.5rem;
+    border-radius: var(--radius-lg);
+    margin: 2rem 0;
+    border-left: 4px solid var(--secondary-color);
+}
+
+.tips-box h3 {
+    color: #1e40af;
+    margin-bottom: 1rem;
+}
+
+.tips-box ul {
+    margin-left: 1.5rem;
+    margin-top: 0.5rem;
+}
+
+.tips-box li {
+    margin: 0.5rem 0;
+    line-height: 1.6;
+}
+
+/* ===================================
+   GLOSSARY
+   =================================== */
+
+.glossary-content {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
     gap: 1rem;
-    margin-top: 1rem;
 }
 
-.nutrition-item {
-    background: var(--bg-gray);
+.glossary-item {
     padding: 1rem;
+    background: var(--bg-gray);
     border-radius: var(--radius-md);
-    text-align: center;
+    border-left: 3px solid var(--secondary-color);
 }
 
-.nutrition-item strong {
+.glossary-item strong {
+    color: var(--primary-dark);
+    font-size: 1rem;
     display: block;
-    font-size: 0.875rem;
-    color: var(--text-muted);
     margin-bottom: 0.5rem;
 }
 
-.nutrition-item span {
-    font-size: 1.25rem;
-    font-weight: 700;
-    color: var(--primary-color);
+.glossary-item p {
+    color: var(--text-dark);
+    font-size: 0.9375rem;
+    line-height: 1.6;
+    margin: 0;
 }
 
 /* ===================================
@@ -646,6 +1229,14 @@
 .btn-recommendations:hover {
     transform: translateY(-2px);
     box-shadow: var(--shadow-md);
+}
+
+/* ===================================
+   RESULTS FOOTER
+   =================================== */
+
+.results-footer {
+    margin-top: 2rem;
 }
 
 /* ===================================
@@ -777,6 +1368,10 @@
     .form-grid-3 {
         grid-template-columns: repeat(2, 1fr);
     }
+    
+    .meal-plan-grid {
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    }
 }
 
 @media (max-width: 768px) {
@@ -825,6 +1420,31 @@
         width: 95%;
         padding: 1.5rem;
     }
+
+    .nutrition-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .meal-plan-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .meal-nutrition-summary {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .meal-item {
+        grid-template-columns: 1fr;
+        gap: 0.25rem;
+    }
+    
+    .item-portion {
+        text-align: left;
+    }
+    
+    .tips-grid {
+        grid-template-columns: 1fr;
+    }
 }
 
 @media (max-width: 480px) {
@@ -843,6 +1463,22 @@
     .metric-value {
         font-size: 1.5rem;
     }
+
+    .meal-title {
+        font-size: 1.1rem;
+    }
+    
+    .meal-card-title {
+        font-size: 1.1rem;
+    }
+    
+    .meal-nutrition-summary {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .badge-value {
+        font-size: 1.25rem;
+    }
 }
 
 /* ===================================
@@ -858,6 +1494,10 @@
         display: none;
     }
 
+    .nutrition-calculator-wrapper {
+        background: white;
+    }
+
     .results-section {
         box-shadow: none;
     }
@@ -866,6 +1506,10 @@
         page-break-inside: avoid;
         box-shadow: none;
         border: 1px solid #ddd;
+    }
+
+    .calculator-card {
+        display: none;
     }
 }
 
@@ -1148,6 +1792,7 @@
 @endsection
 
 @push('scripts')
-    <script src="{{ asset('js/nutrition-calculator.js') }}"></script>
+    {{-- <script src="{{ asset('js/nutrition-calculator.js') }}"></script> --}}
+    <script src="{{ asset('js/nutrition-calculator-friendly.js') }}"></script>
 @endpush
 

@@ -3,733 +3,969 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
 
 class NutritionCalculatorController extends Controller
 {
+    /**
+     * Tampilkan halaman kalkulator
+     */
     public function index()
     {
         return view('nutrition.calculator');
     }
 
-     public function beranda()
+
+    public function beranda()
     {
         return view('nutrition.beranda');
     }
 
-    public function recommendations()
+
+      public function recommendations()
     {
         return view('nutrition.recommendations');
     }
-
+    /**
+     * Proses perhitungan status gizi
+     */
     public function calculate(Request $request)
     {
-        $data = $request->validate([
+        // Validasi input
+        $validator = Validator::make($request->all(), [
             'tinggi' => 'required|numeric|min:50|max:250',
             'berat' => 'required|numeric|min:10|max:300',
             'umur' => 'required|integer|min:0|max:150',
             'jenisKelamin' => 'required|in:pria,wanita',
             'lila' => 'nullable|numeric|min:5|max:60',
             'ulna' => 'nullable|numeric|min:10|max:50',
-            'lingkarBetis' => 'nullable|numeric|min:10|max:60',
             'tinggiLutut' => 'nullable|numeric|min:30|max:80',
+            'lingkarBetis' => 'nullable|numeric|min:10|max:60',
             'amputasi' => 'nullable|string',
-            'penyakit' => 'nullable|string',
+            'penyakit' => 'nullable|string'
         ]);
 
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $data = $validator->validated();
+
+        // Hitung semua parameter
         $results = [
-            'imt' => $this->calculateIMT($data),
-            'statusGizi' => $this->determineNutritionalStatus($data),
-            'bbIdeal' => $this->calculateIdealWeight($data),
+            'success' => true,
+            'data' => $data,
+            'imt' => $this->calculateIMT($data['tinggi'], $data['berat']),
+            'statusGizi' => $this->assessNutritionStatus($data),
+            'bbIdeal' => $this->calculateIdealWeight($data['tinggi'], $data['jenisKelamin'], $data['umur']),
             'bbKering' => $this->calculateLeanBodyMass($data),
-            'bbIdealAdjusted' => $this->calculateAdjustedIdealWeight($data),
-            'bbKoreksiAmputasi' => $this->calculateAmputationCorrection($data),
-            'estimasiBBLILA' => $this->estimateWeightFromMUAC($data),
-            'estimasiBBUlna' => $this->estimateWeightFromUlna($data),
-            'estimasiTBLutut' => $this->estimateHeightFromKnee($data),
-            'recommendations' => $this->generateRecommendations($data),
+            'bmr' => $this->calculateBMR($data),
+            'tdee' => null,
+            'kebutuhanGizi' => null,
+            'rencanaMakan' => null,
+            'estimasiBBLILA' => null,
+            'estimasiBBUlna' => null,
+            'estimasiTBLutut' => null,
+            'bbKoreksiAmputasi' => null,
+            'bbIdealAdjusted' => null,
+            'recommendations' => []
         ];
+
+        // Hitung TDEE
+        $results['tdee'] = $this->calculateTDEE($results['bmr']);
+
+        // Hitung kebutuhan gizi
+        $results['kebutuhanGizi'] = $this->calculateNutritionNeeds($results['tdee'], $data);
+
+        // Generate rencana makan
+        $results['rencanaMakan'] = $this->generateMealPlan($results['kebutuhanGizi'], $data);
+
+        // Estimasi dari LILA
+        if (!empty($data['lila'])) {
+            $results['estimasiBBLILA'] = $this->estimateWeightFromLILA($data['lila'], $data['jenisKelamin']);
+        }
+
+        // Estimasi dari ULNA
+        if (!empty($data['ulna'])) {
+            $results['estimasiBBUlna'] = $this->estimateHeightFromUlna($data['ulna'], $data['jenisKelamin'], $data['umur'], $data['tinggi']);
+        }
+
+        // Estimasi dari Tinggi Lutut
+        if (!empty($data['tinggiLutut'])) {
+            $results['estimasiTBLutut'] = $this->estimateHeightFromKneeHeight($data['tinggiLutut'], $data['jenisKelamin'], $data['umur'], $data['tinggi']);
+        }
+
+        // Koreksi amputasi
+        if (!empty($data['amputasi'])) {
+            $results['bbKoreksiAmputasi'] = $this->adjustWeightForAmputation($data['berat'], $data['amputasi']);
+        }
+
+        // Adjusted Ideal Weight untuk obesitas
+        if ($results['imt']['nilai'] >= 27) {
+            $results['bbIdealAdjusted'] = $this->calculateAdjustedIdealWeight($data['berat'], $results['bbIdeal']['broca']);
+        }
+
+        // Generate rekomendasi
+        $results['recommendations'] = $this->generateRecommendations($results, $data);
 
         return response()->json($results);
     }
 
-    private function calculateIMT($data)
+    /**
+     * Hitung IMT (Indeks Massa Tubuh)
+     */
+    private function calculateIMT($tinggi, $berat)
     {
-        $tinggiMeter = $data['tinggi'] / 100;
-        $imt = $data['berat'] / ($tinggiMeter * $tinggiMeter);
-        
-        $kategori = $this->getIMTCategory($imt, $data['umur']);
-        
+        $tinggiM = $tinggi / 100;
+        $imt = $berat / ($tinggiM * $tinggiM);
+
+        // Kategori berdasarkan standar Asia-Pasifik
+        if ($imt < 17.0) {
+            $kategori = 'Sangat Kurus';
+            $status = 'Gizi Buruk';
+            $penjelasan = 'Berat badan Anda sangat kurang. Konsultasikan dengan ahli gizi untuk program peningkatan berat badan yang sehat.';
+        } elseif ($imt < 18.5) {
+            $kategori = 'Kurus';
+            $status = 'Gizi Kurang';
+            $penjelasan = 'Berat badan Anda kurang. Tingkatkan asupan kalori dan nutrisi dengan pola makan seimbang.';
+        } elseif ($imt < 25.0) {
+            $kategori = 'Normal';
+            $status = 'Gizi Baik';
+            $penjelasan = 'Berat badan Anda ideal! Pertahankan pola makan sehat dan olahraga teratur.';
+        } elseif ($imt < 27.0) {
+            $kategori = 'Gemuk';
+            $status = 'Gizi Lebih';
+            $penjelasan = 'Berat badan Anda berlebih. Kurangi asupan kalori dan tingkatkan aktivitas fisik.';
+        } else {
+            $kategori = 'Obesitas';
+            $status = 'Obesitas';
+            $penjelasan = 'Anda mengalami obesitas. Konsultasikan dengan dokter atau ahli gizi untuk program penurunan berat badan yang aman.';
+        }
+
         return [
-            'nilai' => round($imt, 2),
+            'nilai' => round($imt, 1),
             'kategori' => $kategori,
-            'penjelasan' => $this->getIMTExplanation($kategori)
+            'status' => $status,
+            'penjelasan' => $penjelasan
         ];
     }
 
-    private function getIMTCategory($imt, $umur)
+    /**
+     * Penilaian status gizi dari berbagai metode
+     */
+    private function assessNutritionStatus($data)
     {
-        // WHO Classification for Adults
-        if ($umur >= 18) {
-            if ($imt < 17.0) return 'Sangat Kurus (Severe Thinness)';
-            if ($imt < 18.5) return 'Kurus (Underweight)';
-            if ($imt < 25.0) return 'Normal';
-            if ($imt < 30.0) return 'Kelebihan Berat Badan (Overweight)';
-            if ($imt < 35.0) return 'Obesitas Kelas I';
-            if ($imt < 40.0) return 'Obesitas Kelas II';
-            return 'Obesitas Kelas III (Morbid)';
-        }
-        
-        // For children, use WHO growth charts (simplified)
-        if ($imt < 16.0) return 'Gizi Buruk';
-        if ($imt < 18.5) return 'Gizi Kurang';
-        if ($imt < 25.0) return 'Gizi Baik';
-        return 'Gizi Lebih/Obesitas';
-    }
+        $status = [];
 
-    private function getIMTExplanation($kategori)
-    {
-        $explanations = [
-            'Sangat Kurus (Severe Thinness)' => 'Status gizi sangat kurang, memerlukan intervensi medis segera.',
-            'Kurus (Underweight)' => 'Berat badan di bawah ideal, perlu peningkatan asupan nutrisi.',
-            'Normal' => 'Berat badan ideal dan sehat. Pertahankan pola hidup sehat.',
-            'Kelebihan Berat Badan (Overweight)' => 'Berat badan berlebih, berisiko terhadap penyakit metabolik.',
-            'Obesitas Kelas I' => 'Obesitas ringan, perlu pengaturan diet dan olahraga teratur.',
-            'Obesitas Kelas II' => 'Obesitas sedang, konsultasi dengan ahli gizi diperlukan.',
-            'Obesitas Kelas III (Morbid)' => 'Obesitas berat, memerlukan intervensi medis serius.',
-            'Gizi Buruk' => 'Status gizi anak sangat kurang, perlu pemantauan medis.',
-            'Gizi Kurang' => 'Status gizi anak kurang, perlu perbaikan pola makan.',
-            'Gizi Baik' => 'Status gizi anak baik, pertahankan pola makan sehat.',
-            'Gizi Lebih/Obesitas' => 'Status gizi anak berlebih, perlu pengaturan aktivitas dan diet.',
-        ];
-        
-        return $explanations[$kategori] ?? 'Konsultasikan dengan tenaga kesehatan.';
-    }
-
-    private function determineNutritionalStatus($data)
-    {
-        $umur = $data['umur'];
-        $results = [];
-
-        // Status Gizi dari IMT
-        $results['dariIMT'] = $this->calculateIMT($data);
-
-        // Status Gizi dari LILA (jika ada)
+        // Status dari LILA (Lingkar Lengan Atas)
         if (!empty($data['lila'])) {
-            $results['dariLILA'] = $this->assessFromMUAC($data['lila'], $umur, $data['jenisKelamin']);
-        }
+            $lila = $data['lila'];
+            $jenisKelamin = $data['jenisKelamin'];
+            $umur = $data['umur'];
 
-        // Untuk Lansia (>60 tahun)
-        if ($umur >= 60) {
-            if (!empty($data['lila'])) {
-                $results['lansiaLILA'] = $this->assessElderlyMUAC($data['lila'], $data['jenisKelamin']);
+            if ($jenisKelamin === 'wanita' && $umur >= 15) {
+                if ($lila < 23.5) {
+                    $statusLILA = 'Kurang Energi Kronis (KEK)';
+                    $penjelasanLILA = 'LILA Anda di bawah standar. Risiko KEK tinggi, perlu peningkatan asupan energi dan protein.';
+                } else {
+                    $statusLILA = 'Normal';
+                    $penjelasanLILA = 'LILA Anda normal, status gizi baik.';
+                }
+
+                $status['dariLILA'] = [
+                    'metode' => 'LILA Wanita Dewasa',
+                    'nilai' => $lila,
+                    'status' => $statusLILA,
+                    'penjelasan' => $penjelasanLILA,
+                    'cutoff' => '< 23.5 cm = KEK'
+                ];
+            } elseif ($jenisKelamin === 'pria') {
+                if ($lila < 23.0) {
+                    $statusLILA = 'Malnutrisi';
+                    $penjelasanLILA = 'LILA Anda di bawah standar. Indikasi malnutrisi, perlu evaluasi gizi lebih lanjut.';
+                } else {
+                    $statusLILA = 'Normal';
+                    $penjelasanLILA = 'LILA Anda normal, status gizi baik.';
+                }
+
+                $status['dariLILA'] = [
+                    'metode' => 'LILA Pria Dewasa',
+                    'nilai' => $lila,
+                    'status' => $statusLILA,
+                    'penjelasan' => $penjelasanLILA,
+                    'cutoff' => '< 23.0 cm = Malnutrisi'
+                ];
             }
-            if (!empty($data['lingkarBetis'])) {
-                $results['lansiaLingkarBetis'] = $this->assessCalfCircumference($data['lingkarBetis']);
+
+            // Penilaian LILA untuk lansia (≥60 tahun)
+            if ($umur >= 60) {
+                if ($lila < 22.0) {
+                    $statusLansiaLILA = 'Malnutrisi';
+                    $penjelasanLansiaLILA = 'LILA menunjukkan risiko malnutrisi pada lansia. Perlu intervensi gizi segera.';
+                } elseif ($lila < 24.0) {
+                    $statusLansiaLILA = 'Risiko Malnutrisi';
+                    $penjelasanLansiaLILA = 'LILA menunjukkan risiko malnutrisi. Tingkatkan asupan protein dan energi.';
+                } else {
+                    $statusLansiaLILA = 'Normal';
+                    $penjelasanLansiaLILA = 'LILA normal untuk lansia, status gizi baik.';
+                }
+
+                $status['lansiaLILA'] = [
+                    'nilai' => $lila,
+                    'status' => $statusLansiaLILA,
+                    'penjelasan' => $penjelasanLansiaLILA
+                ];
             }
         }
 
-        // Untuk Anak (berdasarkan Permenkes No 2 Tahun 2020)
-        if ($umur < 18) {
-            $results['permenkes'] = $this->assessChildNutrition($data);
+        // Penilaian Lingkar Betis untuk lansia
+        if (!empty($data['lingkarBetis']) && $data['umur'] >= 60) {
+            $lingkarBetis = $data['lingkarBetis'];
+
+            if ($lingkarBetis < 31.0) {
+                $statusBetis = 'Risiko Sarcopenia';
+                $penjelasanBetis = 'Lingkar betis rendah, risiko kehilangan massa otot (sarcopenia). Tingkatkan asupan protein dan latihan kekuatan.';
+            } else {
+                $statusBetis = 'Normal';
+                $penjelasanBetis = 'Lingkar betis normal, massa otot baik untuk lansia.';
+            }
+
+            $status['lansiaLingkarBetis'] = [
+                'nilai' => $lingkarBetis,
+                'status' => $statusBetis,
+                'penjelasan' => $penjelasanBetis,
+                'cutoff' => '< 31 cm = Risiko Sarcopenia'
+            ];
         }
 
-        return $results;
-    }
-
-    private function assessFromMUAC($lila, $umur, $jenisKelamin)
-    {
-        // Berdasarkan kriteria WHO dan berbagai sumber
-        if ($umur >= 18) {
-            // Dewasa
-            $cutoff = $jenisKelamin === 'pria' ? 23.0 : 22.0;
+        // Penilaian untuk anak berdasarkan Permenkes No 2/2020
+        if ($data['umur'] < 18) {
+            $imt = $this->calculateIMT($data['tinggi'], $data['berat']);
             
-            if ($lila < $cutoff) {
-                $status = 'Kurang Energi Kronis (KEK)';
-                $penjelasan = 'LILA di bawah standar, menunjukkan risiko malnutrisi.';
+            // Hitung persentase berat badan terhadap usia
+            $bbIdeal = $this->calculateIdealWeight($data['tinggi'], $data['jenisKelamin'], $data['umur']);
+            $persenBB = ($data['berat'] / $bbIdeal['broca']) * 100;
+
+            if ($persenBB < 70) {
+                $statusBBU = 'Gizi Buruk';
+                $rekomendasiBBU = 'Segera konsultasi ke dokter/ahli gizi untuk penanganan gizi buruk.';
+            } elseif ($persenBB < 80) {
+                $statusBBU = 'Gizi Kurang';
+                $rekomendasiBBU = 'Tingkatkan asupan makanan bergizi tinggi kalori dan protein.';
+            } elseif ($persenBB <= 110) {
+                $statusBBU = 'Gizi Baik';
+                $rekomendasiBBU = 'Pertahankan pola makan sehat dan seimbang.';
+            } elseif ($persenBB <= 120) {
+                $statusBBU = 'Berisiko Gizi Lebih';
+                $rekomendasiBBU = 'Kontrol asupan kalori dan tingkatkan aktivitas fisik.';
             } else {
-                $status = 'Normal';
-                $penjelasan = 'LILA dalam batas normal.';
+                $statusBBU = 'Gizi Lebih/Obesitas';
+                $rekomendasiBBU = 'Konsultasi untuk program penurunan berat badan yang aman untuk anak.';
             }
-        } else if ($umur >= 5) {
-            // Anak 5-18 tahun
-            if ($lila < 16.0) {
-                $status = 'Gizi Buruk';
-                $penjelasan = 'LILA sangat rendah, memerlukan intervensi segera.';
-            } else if ($lila < 18.5) {
-                $status = 'Gizi Kurang';
-                $penjelasan = 'LILA di bawah standar untuk usia ini.';
-            } else {
-                $status = 'Normal';
-                $penjelasan = 'LILA dalam batas normal untuk usia ini.';
-            }
+
+            $status['permenkes'] = [
+                'persenBB' => round($persenBB, 1),
+                'statusBBU' => $statusBBU,
+                'imt' => $imt,
+                'rekomendasi' => $rekomendasiBBU
+            ];
+        }
+
+        return $status;
+    }
+
+    /**
+     * Hitung Berat Badan Ideal
+     */
+    private function calculateIdealWeight($tinggi, $jenisKelamin, $umur)
+    {
+        // Rumus Broca
+        if ($tinggi <= 150) {
+            $broca = ($tinggi - 100) * 1.0;
+        } elseif ($tinggi <= 160) {
+            $broca = ($tinggi - 100) * 0.9;
         } else {
-            // Balita
-            if ($lila < 11.5) {
-                $status = 'Gizi Buruk';
-                $penjelasan = 'LILA sangat rendah untuk balita.';
-            } else if ($lila < 12.5) {
-                $status = 'Gizi Kurang';
-                $penjelasan = 'LILA kurang untuk balita.';
-            } else {
-                $status = 'Normal';
-                $penjelasan = 'LILA normal untuk balita.';
-            }
+            $broca = ($tinggi - 100) * ($jenisKelamin === 'pria' ? 0.9 : 0.85);
         }
-
-        return [
-            'nilai' => $lila,
-            'status' => $status,
-            'penjelasan' => $penjelasan,
-            'metode' => 'LILA (Lingkar Lengan Atas)'
-        ];
-    }
-
-    private function assessElderlyMUAC($lila, $jenisKelamin)
-    {
-        // Untuk lansia berdasarkan beberapa penelitian
-        $cutoff = $jenisKelamin === 'pria' ? 25.0 : 24.0;
-        
-        if ($lila < $cutoff) {
-            $status = 'Risiko Malnutrisi';
-            $penjelasan = 'LILA lansia di bawah batas normal, risiko malnutrisi meningkat.';
-        } else if ($lila < ($cutoff + 2)) {
-            $status = 'Normal Rendah';
-            $penjelasan = 'LILA lansia dalam batas normal rendah, perlu pemantauan.';
-        } else {
-            $status = 'Normal';
-            $penjelasan = 'LILA lansia dalam batas normal.';
-        }
-
-        return [
-            'nilai' => $lila,
-            'status' => $status,
-            'penjelasan' => $penjelasan
-        ];
-    }
-
-    private function assessCalfCircumference($lingkarBetis)
-    {
-        // Standar WHO untuk lansia
-        if ($lingkarBetis < 31.0) {
-            $status = 'Risiko Malnutrisi Tinggi';
-            $penjelasan = 'Lingkar betis sangat rendah, indikasi kehilangan massa otot.';
-        } else {
-            $status = 'Normal';
-            $penjelasan = 'Lingkar betis dalam batas normal.';
-        }
-
-        return [
-            'nilai' => $lingkarBetis,
-            'status' => $status,
-            'penjelasan' => $penjelasan
-        ];
-    }
-
-    private function assessChildNutrition($data)
-    {
-        // Simplified assessment based on Permenkes No 2 Tahun 2020
-        $imt = $this->calculateIMT($data);
-        $tinggi = $data['tinggi'];
-        $umur = $data['umur'];
-        
-        // BB/U (Weight for Age)
-        $bbIdeal = $this->calculateChildIdealWeight($tinggi, $umur, $data['jenisKelamin']);
-        $persenBB = ($data['berat'] / $bbIdeal) * 100;
-        
-        if ($persenBB < 80) {
-            $statusBBU = 'Berat Badan Sangat Kurang';
-        } else if ($persenBB < 90) {
-            $statusBBU = 'Berat Badan Kurang';
-        } else if ($persenBB <= 110) {
-            $statusBBU = 'Berat Badan Normal';
-        } else {
-            $statusBBU = 'Berat Badan Lebih';
-        }
-
-        return [
-            'statusBBU' => $statusBBU,
-            'persenBB' => round($persenBB, 1),
-            'imt' => $imt,
-            'rekomendasi' => $this->getChildRecommendation($statusBBU)
-        ];
-    }
-
-    private function calculateChildIdealWeight($tinggi, $umur, $jenisKelamin)
-    {
-        // Simplified formula - in reality, use WHO growth charts
-        // This is an approximation
-        if ($umur < 12) {
-            // Infants
-            return ($umur * 0.5) + 4;
-        } else if ($umur < 18) {
-            // Children/Adolescents - simplified
-            $base = $jenisKelamin === 'pria' ? 12 : 11;
-            return $base + (($umur - 2) * 2);
-        }
-        return 50; // fallback
-    }
-
-    private function getChildRecommendation($status)
-    {
-        $recommendations = [
-            'Berat Badan Sangat Kurang' => 'Konsultasi ke dokter/ahli gizi segera. Perlukan evaluasi medis lengkap.',
-            'Berat Badan Kurang' => 'Tingkatkan asupan kalori dan protein. Konsultasi ke ahli gizi.',
-            'Berat Badan Normal' => 'Pertahankan pola makan sehat dan seimbang.',
-            'Berat Badan Lebih' => 'Atur pola makan dan tingkatkan aktivitas fisik.'
-        ];
-        
-        return $recommendations[$status] ?? 'Konsultasi dengan tenaga kesehatan.';
-    }
-
-    private function calculateIdealWeight($data)
-    {
-        $tinggi = $data['tinggi'];
-        $jenisKelamin = $data['jenisKelamin'];
-        $umur = $data['umur'];
-
-        $results = [];
-
-        // Rumus Broca (umum)
-        $bbBroca = ($tinggi - 100) * 0.9;
-        if ($jenisKelamin === 'wanita') {
-            $bbBroca *= 0.95;
-        }
-        $results['broca'] = round($bbBroca, 2);
 
         // Rumus Devine (untuk dewasa)
-        if ($umur >= 18) {
-            if ($jenisKelamin === 'pria') {
-                $bbDevine = 50 + (2.3 * (($tinggi - 152.4) / 2.54));
-            } else {
-                $bbDevine = 45.5 + (2.3 * (($tinggi - 152.4) / 2.54));
-            }
-            $results['devine'] = round($bbDevine, 2);
+        if ($jenisKelamin === 'pria') {
+            $devine = 50 + (2.3 * (($tinggi / 2.54) - 60));
+        } else {
+            $devine = 45.5 + (2.3 * (($tinggi / 2.54) - 60));
         }
 
         // Rumus Hamwi
-        if ($umur >= 18) {
-            if ($jenisKelamin === 'pria') {
-                $bbHamwi = 48 + (2.7 * (($tinggi - 152.4) / 2.54));
-            } else {
-                $bbHamwi = 45.5 + (2.2 * (($tinggi - 152.4) / 2.54));
-            }
-            $results['hamwi'] = round($bbHamwi, 2);
+        if ($jenisKelamin === 'pria') {
+            $hamwi = 48 + (2.7 * (($tinggi / 2.54) - 60));
+        } else {
+            $hamwi = 45.5 + (2.2 * (($tinggi / 2.54) - 60));
         }
 
-        // Rata-rata dari semua metode
-        $results['rataRata'] = round(array_sum($results) / count($results), 2);
-        $results['range'] = [
-            'min' => round(min($results) * 0.95, 2),
-            'max' => round(max($results) * 1.05, 2)
-        ];
+        $rataRata = ($broca + $devine + $hamwi) / 3;
 
-        return $results;
+        return [
+            'broca' => round($broca, 1),
+            'devine' => round($devine, 1),
+            'hamwi' => round($hamwi, 1),
+            'rataRata' => round($rataRata, 1),
+            'range' => [
+                'min' => round($rataRata * 0.9, 1),
+                'max' => round($rataRata * 1.1, 1)
+            ]
+        ];
     }
 
+    /**
+     * Hitung Lean Body Mass (Berat Badan Kering)
+     */
     private function calculateLeanBodyMass($data)
     {
-        // Rumus Boer untuk Lean Body Mass
-        $berat = $data['berat'];
         $tinggi = $data['tinggi'];
+        $berat = $data['berat'];
         $jenisKelamin = $data['jenisKelamin'];
 
+        // Rumus Boer
         if ($jenisKelamin === 'pria') {
-            $lbm = (0.407 * $berat) + (0.267 * $tinggi) - 19.2;
+            $boer = (0.407 * $berat) + (0.267 * $tinggi) - 19.2;
         } else {
-            $lbm = (0.252 * $berat) + (0.473 * $tinggi) - 48.3;
+            $boer = (0.252 * $berat) + (0.473 * $tinggi) - 48.3;
         }
 
         // Rumus Hume
         if ($jenisKelamin === 'pria') {
-            $lbmHume = (0.32810 * $berat) + (0.33929 * $tinggi) - 29.5336;
+            $hume = (0.32810 * $berat) + (0.33929 * $tinggi) - 29.5336;
         } else {
-            $lbmHume = (0.29569 * $berat) + (0.41813 * $tinggi) - 43.2933;
+            $hume = (0.29569 * $berat) + (0.41813 * $tinggi) - 43.2933;
         }
 
+        $rataRata = ($boer + $hume) / 2;
+
         return [
-            'boer' => round($lbm, 2),
-            'hume' => round($lbmHume, 2),
-            'rataRata' => round(($lbm + $lbmHume) / 2, 2),
-            'penjelasan' => 'Berat badan tanpa lemak (lean body mass) menunjukkan massa otot dan organ.'
+            'boer' => round($boer, 1),
+            'hume' => round($hume, 1),
+            'rataRata' => round($rataRata, 1),
+            'penjelasan' => 'Berat badan tanpa lemak (massa otot, tulang, organ). Penting untuk menentukan kebutuhan protein dan energi.'
         ];
     }
 
-    private function calculateAdjustedIdealWeight($data)
+    /**
+     * Hitung BMR (Basal Metabolic Rate)
+     */
+    private function calculateBMR($data)
     {
-        // Untuk pasien obesitas
-        $bbIdeal = $this->calculateIdealWeight($data);
-        $bbAktual = $data['berat'];
-        $imt = $this->calculateIMT($data);
+        $berat = $data['berat'];
+        $tinggi = $data['tinggi'];
+        $umur = $data['umur'];
+        $jenisKelamin = $data['jenisKelamin'];
 
-        if ($imt['nilai'] >= 30) {
-            // Rumus adjusted ideal body weight
-            $bbIdealAdjusted = $bbIdeal['rataRata'] + (($bbAktual - $bbIdeal['rataRata']) * 0.25);
+        // Rumus Harris-Benedict
+        if ($jenisKelamin === 'pria') {
+            $bmr = 66.5 + (13.75 * $berat) + (5.003 * $tinggi) - (6.75 * $umur);
+        } else {
+            $bmr = 655.1 + (9.563 * $berat) + (1.850 * $tinggi) - (4.676 * $umur);
+        }
+
+        return round($bmr);
+    }
+
+    /**
+     * Hitung TDEE (Total Daily Energy Expenditure)
+     */
+    private function calculateTDEE($bmr, $activityLevel = 'moderate')
+    {
+        $activityFactors = [
+            'sedentary' => 1.2,    // Sedikit/tidak ada olahraga
+            'light' => 1.375,       // Olahraga ringan 1-3 hari/minggu
+            'moderate' => 1.55,     // Olahraga sedang 3-5 hari/minggu
+            'active' => 1.725,      // Olahraga berat 6-7 hari/minggu
+            'very_active' => 1.9    // Olahraga sangat berat
+        ];
+
+        $factor = $activityFactors[$activityLevel] ?? 1.55;
+        return round($bmr * $factor);
+    }
+
+    /**
+     * Hitung kebutuhan gizi harian
+     */
+    private function calculateNutritionNeeds($tdee, $data)
+    {
+        // Distribusi makronutrien standar
+        $carbPercentage = 0.55;  // 55% dari total kalori
+        $proteinPercentage = 0.15; // 15% dari total kalori
+        $fatPercentage = 0.30;   // 30% dari total kalori
+
+        // Adjust untuk kondisi khusus
+        if (!empty($data['penyakit'])) {
+            $penyakit = strtolower($data['penyakit']);
             
-            return [
-                'nilai' => round($bbIdealAdjusted, 2),
-                'penjelasan' => 'Berat badan ideal yang disesuaikan untuk pasien obesitas.',
-                'digunakan' => true
-            ];
+            if (strpos($penyakit, 'diabet') !== false) {
+                // Untuk diabetes: kurangi karbo, tingkatkan protein
+                $carbPercentage = 0.45;
+                $proteinPercentage = 0.20;
+                $fatPercentage = 0.35;
+            }
+            
+            if (strpos($penyakit, 'ginjal') !== false) {
+                // Untuk penyakit ginjal: batasi protein
+                $carbPercentage = 0.60;
+                $proteinPercentage = 0.10;
+                $fatPercentage = 0.30;
+            }
         }
 
+        // Hitung kalori per makronutrien
+        $carbCalories = $tdee * $carbPercentage;
+        $proteinCalories = $tdee * $proteinPercentage;
+        $fatCalories = $tdee * $fatPercentage;
+
+        // Konversi ke gram (karbo=4 kkal/g, protein=4 kkal/g, lemak=9 kkal/g)
+        $carbGrams = round($carbCalories / 4);
+        $proteinGrams = round($proteinCalories / 4);
+        $fatGrams = round($fatCalories / 9);
+
         return [
-            'nilai' => $bbIdeal['rataRata'],
-            'penjelasan' => 'Tidak diperlukan penyesuaian karena IMT < 30.',
-            'digunakan' => false
+            'totalKalori' => $tdee,
+            'karbohidrat' => [
+                'gram' => $carbGrams,
+                'kalori' => round($carbCalories),
+                'persentase' => $carbPercentage * 100
+            ],
+            'protein' => [
+                'gram' => $proteinGrams,
+                'kalori' => round($proteinCalories),
+                'persentase' => $proteinPercentage * 100
+            ],
+            'lemak' => [
+                'gram' => $fatGrams,
+                'kalori' => round($fatCalories),
+                'persentase' => $fatPercentage * 100
+            ]
         ];
     }
 
-    private function calculateAmputationCorrection($data)
+    /**
+     * Generate rencana makan harian
+     */
+    private function generateMealPlan($kebutuhanGizi, $data)
     {
-        if (empty($data['amputasi'])) {
-            return [
-                'diperlukan' => false,
-                'nilai' => $data['berat'],
-                'penjelasan' => 'Tidak ada amputasi.'
+        $totalKalori = $kebutuhanGizi['totalKalori'];
+        
+        // Distribusi kalori per waktu makan
+        $distribusi = [
+            'sarapan' => 0.25,      // 25%
+            'snackPagi' => 0.10,    // 10%
+            'makanSiang' => 0.30,   // 30%
+            'snackSore' => 0.10,    // 10%
+            'makanMalam' => 0.25    // 25%
+        ];
+
+        $rencanaMakan = [];
+
+        foreach ($distribusi as $waktu => $persentase) {
+            $kaloriWaktu = round($totalKalori * $persentase);
+            $karboWaktu = round($kebutuhanGizi['karbohidrat']['gram'] * $persentase);
+            $proteinWaktu = round($kebutuhanGizi['protein']['gram'] * $persentase);
+            $lemakWaktu = round($kebutuhanGizi['lemak']['gram'] * $persentase);
+
+            $rencanaMakan[$waktu] = [
+                'kalori' => $kaloriWaktu,
+                'karbohidrat' => $karboWaktu,
+                'protein' => $proteinWaktu,
+                'lemak' => $lemakWaktu,
+                'menu' => $this->generateMenuForMeal($waktu, $kaloriWaktu, $karboWaktu, $proteinWaktu, $lemakWaktu, $data)
             ];
         }
 
-        // Persentase berat bagian tubuh yang diamputasi
-        $persentaseAmputasi = [
-            'tangan' => 0.65,
-            'lengan_bawah' => 1.6,
+        return $rencanaMakan;
+    }
+
+    /**
+     * Generate menu untuk setiap waktu makan
+     */
+    private function generateMenuForMeal($waktu, $kalori, $karbo, $protein, $lemak, $data)
+    {
+        $menu = [];
+        $isDiabetic = !empty($data['penyakit']) && strpos(strtolower($data['penyakit']), 'diabet') !== false;
+        $isHypertension = !empty($data['penyakit']) && (strpos(strtolower($data['penyakit']), 'hipertensi') !== false || strpos(strtolower($data['penyakit']), 'darah tinggi') !== false);
+        $isGout = !empty($data['penyakit']) && (strpos(strtolower($data['penyakit']), 'asam urat') !== false || strpos(strtolower($data['penyakit']), 'gout') !== false);
+
+        switch ($waktu) {
+            case 'sarapan':
+                $penukarKarbo = max(1, round($karbo / 40));
+                $penukarProtein = max(1, round($protein / 7));
+                
+                $menu[] = [
+                    'golongan' => 'Karbohidrat',
+                    'bahan' => 'Nasi putih',
+                    'porsi' => '¾ gelas',
+                    'jumlah' => $penukarKarbo,
+                    'catatan' => "$penukarKarbo penukar (" . ($penukarKarbo * 40) . "g karbo)"
+                ];
+
+                $menu[] = [
+                    'golongan' => 'Protein Hewani',
+                    'bahan' => $isGout ? 'Telur ayam rebus' : 'Telur ayam',
+                    'porsi' => '1 butir',
+                    'jumlah' => $penukarProtein,
+                    'catatan' => "$penukarProtein penukar (" . ($penukarProtein * 7) . "g protein)"
+                ];
+
+                $menu[] = [
+                    'golongan' => 'Sayuran',
+                    'bahan' => 'Bayam / Kangkung',
+                    'porsi' => '1 gelas',
+                    'jumlah' => 1,
+                    'catatan' => '1 penukar (5g karbo, 1g protein)'
+                ];
+
+                $menu[] = [
+                    'golongan' => 'Buah',
+                    'bahan' => $isDiabetic ? 'Apel / Pepaya' : 'Pisang / Pepaya',
+                    'porsi' => '1 buah sedang',
+                    'jumlah' => 1,
+                    'catatan' => '1 penukar (12g karbo)'
+                ];
+
+                $menu[] = [
+                    'golongan' => 'Susu',
+                    'bahan' => 'Susu rendah lemak',
+                    'porsi' => '1 gelas (200ml)',
+                    'jumlah' => 1,
+                    'catatan' => '1 penukar (7g protein, 10g karbo)'
+                ];
+
+                $penukarMinyak = max(1, round($lemak / 10));
+                $menu[] = [
+                    'golongan' => 'Minyak/Lemak',
+                    'bahan' => 'Minyak sayur untuk memasak',
+                    'porsi' => '1 sdt',
+                    'jumlah' => $penukarMinyak,
+                    'catatan' => "$penukarMinyak penukar untuk memasak"
+                ];
+                break;
+
+            case 'snackPagi':
+                $menu[] = [
+                    'golongan' => 'Buah',
+                    'bahan' => $isDiabetic ? 'Jeruk / Apel' : 'Pisang / Apel',
+                    'porsi' => '1 buah',
+                    'jumlah' => 2,
+                    'catatan' => '2 penukar (24g karbo)'
+                ];
+                break;
+
+            case 'makanSiang':
+                $penukarKarbo = max(2, round($karbo / 40));
+                $penukarProteinHewani = max(2, round($protein / 14));
+                
+                $menu[] = [
+                    'golongan' => 'Karbohidrat',
+                    'bahan' => 'Nasi putih',
+                    'porsi' => '¾ gelas',
+                    'jumlah' => $penukarKarbo,
+                    'catatan' => "$penukarKarbo penukar (" . ($penukarKarbo * 40) . "g karbo)"
+                ];
+
+                $proteinSource = $isGout ? 'Daging ayam tanpa kulit' : 'Ayam / Ikan segar';
+                $menu[] = [
+                    'golongan' => 'Protein Hewani',
+                    'bahan' => $proteinSource,
+                    'porsi' => '1 potong sedang',
+                    'jumlah' => $penukarProteinHewani,
+                    'catatan' => "$penukarProteinHewani penukar (" . ($penukarProteinHewani * 7) . "g protein)"
+                ];
+
+                $menu[] = [
+                    'golongan' => 'Protein Nabati',
+                    'bahan' => 'Tempe / Tahu',
+                    'porsi' => '2 potong sedang',
+                    'jumlah' => 2,
+                    'catatan' => '2 penukar (10g protein, 14g karbo)'
+                ];
+
+                $menu[] = [
+                    'golongan' => 'Sayuran',
+                    'bahan' => 'Wortel + Brokoli',
+                    'porsi' => '1 gelas',
+                    'jumlah' => 2,
+                    'catatan' => '2 porsi sayur berbeda'
+                ];
+
+                $menu[] = [
+                    'golongan' => 'Buah',
+                    'bahan' => 'Jeruk / Semangka',
+                    'porsi' => '1 porsi',
+                    'jumlah' => 1,
+                    'catatan' => '1 penukar (12g karbo)'
+                ];
+
+                $penukarMinyak = max(2, round($lemak / 10));
+                $menu[] = [
+                    'golongan' => 'Minyak/Lemak',
+                    'bahan' => 'Minyak untuk memasak',
+                    'porsi' => '1 sdt',
+                    'jumlah' => $penukarMinyak,
+                    'catatan' => "$penukarMinyak penukar untuk tumis/goreng"
+                ];
+                break;
+
+            case 'snackSore':
+                $menu[] = [
+                    'golongan' => 'Snack',
+                    'bahan' => 'Oatmeal / Roti gandum',
+                    'porsi' => '1 porsi',
+                    'jumlah' => 1,
+                    'catatan' => '1 penukar (40g karbo)'
+                ];
+
+                $menu[] = [
+                    'golongan' => 'Susu',
+                    'bahan' => 'Yogurt rendah lemak',
+                    'porsi' => '1 gelas',
+                    'jumlah' => 1,
+                    'catatan' => '1 penukar (7g protein, 10g karbo)'
+                ];
+                break;
+
+            case 'makanMalam':
+                $penukarKarbo = max(2, round($karbo / 40));
+                $penukarProtein = max(2, round($protein / 7));
+                
+                $menu[] = [
+                    'golongan' => 'Karbohidrat',
+                    'bahan' => 'Nasi putih / Kentang',
+                    'porsi' => '¾ gelas',
+                    'jumlah' => $penukarKarbo,
+                    'catatan' => "$penukarKarbo penukar (" . ($penukarKarbo * 40) . "g karbo)"
+                ];
+
+                $proteinMalam = $isGout ? 'Ikan segar' : 'Ikan / Ayam';
+                $menu[] = [
+                    'golongan' => 'Protein Hewani',
+                    'bahan' => $proteinMalam,
+                    'porsi' => '1 potong sedang',
+                    'jumlah' => $penukarProtein,
+                    'catatan' => "$penukarProtein penukar (" . ($penukarProtein * 7) . "g protein)"
+                ];
+
+                $menu[] = [
+                    'golongan' => 'Protein Nabati',
+                    'bahan' => 'Tahu / Tempe',
+                    'porsi' => '1 potong besar',
+                    'jumlah' => 1,
+                    'catatan' => '1 penukar (5g protein, 7g karbo)'
+                ];
+
+                $menu[] = [
+                    'golongan' => 'Sayuran',
+                    'bahan' => 'Sawi + Wortel',
+                    'porsi' => '1 gelas',
+                    'jumlah' => 2,
+                    'catatan' => '2 porsi sayur berbeda'
+                ];
+
+                $menu[] = [
+                    'golongan' => 'Buah',
+                    'bahan' => 'Melon / Semangka',
+                    'porsi' => '1 potong',
+                    'jumlah' => 1,
+                    'catatan' => '1 penukar (12g karbo)'
+                ];
+
+                $penukarMinyak = max(2, round($lemak / 10));
+                $menu[] = [
+                    'golongan' => 'Minyak/Lemak',
+                    'bahan' => 'Minyak untuk memasak',
+                    'porsi' => '1 sdt',
+                    'jumlah' => $penukarMinyak,
+                    'catatan' => "$penukarMinyak penukar untuk memasak"
+                ];
+                break;
+        }
+
+        return $menu;
+    }
+
+    /**
+     * Estimasi berat badan dari LILA
+     */
+    private function estimateWeightFromLILA($lila, $jenisKelamin)
+    {
+        // Rumus estimasi (simplified)
+        if ($jenisKelamin === 'pria') {
+            $jung = ($lila * 3.5) - 25;
+            $powell = ($lila * 4.0) - 30;
+        } else {
+            $jung = ($lila * 3.3) - 20;
+            $powell = ($lila * 3.8) - 25;
+        }
+
+        $rataRata = ($jung + $powell) / 2;
+
+        return [
+            'estimasi' => [
+                'jung' => round($jung, 1),
+                'powell' => round($powell, 1),
+                'rataRata' => round($rataRata, 1)
+            ],
+            'penjelasan' => 'Estimasi berat badan berdasarkan lingkar lengan atas. Berguna untuk pasien yang sulit ditimbang.',
+            'akurasi' => 'Akurasi ±3-5 kg. Gunakan sebagai estimasi awal, bukan pengganti penimbangan langsung.'
+        ];
+    }
+
+    /**
+     * Estimasi tinggi badan dari ULNA
+     */
+    private function estimateHeightFromUlna($ulna, $jenisKelamin, $umur, $tinggiAktual)
+    {
+        if ($jenisKelamin === 'pria') {
+            if ($umur < 65) {
+                $estimasi = (4.605 * $ulna) + (1.308 * $umur) + 28.003;
+            } else {
+                $estimasi = (2.117 * $ulna) + (1.474 * $umur) + 75.348;
+            }
+        } else {
+            if ($umur < 65) {
+                $estimasi = (4.459 * $ulna) + (1.315 * $umur) + 31.485;
+            } else {
+                $estimasi = (2.658 * $ulna) + (1.229 * $umur) + 84.475;
+            }
+        }
+
+        $selisih = $estimasi - $tinggiAktual;
+
+        return [
+            'tinggiEstimasi' => round($estimasi, 1),
+            'tinggiAktual' => $tinggiAktual,
+            'selisih' => round($selisih, 1),
+            'penjelasan' => 'Estimasi tinggi badan dari panjang tulang ulna. Berguna untuk pasien yang tidak bisa berdiri.',
+            'akurasi' => abs($selisih) <= 5 ? 'Estimasi sangat baik (selisih ≤5 cm)' : 'Estimasi cukup baik (perlu verifikasi)'
+        ];
+    }
+
+    /**
+     * Estimasi tinggi badan dari tinggi lutut
+     */
+    private function estimateHeightFromKneeHeight($tinggiLutut, $jenisKelamin, $umur, $tinggiAktual)
+    {
+        if ($jenisKelamin === 'pria') {
+            $estimasi = 64.19 - (0.04 * $umur) + (2.02 * $tinggiLutut);
+            $metode = 'Rumus Chumlea (Pria)';
+        } else {
+            $estimasi = 84.88 - (0.24 * $umur) + (1.83 * $tinggiLutut);
+            $metode = 'Rumus Chumlea (Wanita)';
+        }
+
+        $selisih = $estimasi - $tinggiAktual;
+
+        return [
+            'estimasi' => round($estimasi, 1),
+            'tinggiAktual' => $tinggiAktual,
+            'selisih' => round($selisih, 1),
+            'metode' => $metode,
+            'penjelasan' => 'Estimasi tinggi badan dari tinggi lutut menggunakan rumus Chumlea. Akurat untuk lansia dan pasien bedridden.'
+        ];
+    }
+
+    /**
+     * Koreksi berat badan untuk amputasi
+     */
+    private function adjustWeightForAmputation($beratAktual, $jenisAmputasi)
+    {
+        $persentaseKehilangan = [
+            'tangan' => 0.7,
+            'lengan_bawah' => 2.3,
             'lengan_atas' => 2.7,
             'seluruh_lengan' => 5.0,
             'kaki' => 1.5,
-            'tungkai_bawah' => 6.0,
-            'tungkai_atas' => 10.0,
-            'seluruh_tungkai' => 16.0,
+            'tungkai_bawah' => 5.9,
+            'tungkai_atas' => 10.1,
+            'seluruh_tungkai' => 16.0
         ];
 
-        $amputasi = strtolower($data['amputasi']);
-        $persenKehilangan = $persentaseAmputasi[$amputasi] ?? 0;
-
-        $bbTanpaAmputasi = $data['berat'] / (1 - ($persenKehilangan / 100));
+        $persen = $persentaseKehilangan[$jenisAmputasi] ?? 0;
+        $beratHilang = $beratAktual * ($persen / 100);
+        $beratKoreksi = $beratAktual / (1 - ($persen / 100));
 
         return [
             'diperlukan' => true,
-            'bbAktual' => $data['berat'],
-            'bbKoreksi' => round($bbTanpaAmputasi, 2),
-            'persenKehilangan' => $persenKehilangan,
-            'jenisAmputasi' => $amputasi,
-            'penjelasan' => 'Berat badan dikoreksi untuk memperhitungkan amputasi.'
+            'bbAktual' => $beratAktual,
+            'bbKoreksi' => round($beratKoreksi, 1),
+            'jenisAmputasi' => ucwords(str_replace('_', ' ', $jenisAmputasi)),
+            'persenKehilangan' => $persen,
+            'penjelasan' => "Berat badan dikoreksi untuk amputasi {$persen}%. BB koreksi digunakan untuk perhitungan kebutuhan nutrisi."
         ];
     }
 
-    private function estimateWeightFromMUAC($data)
+    /**
+     * Hitung Adjusted Ideal Body Weight untuk obesitas
+     */
+    private function calculateAdjustedIdealWeight($beratAktual, $beratIdeal)
     {
-        if (empty($data['lila'])) {
-            return null;
-        }
-
-        $lila = $data['lila'];
-        $umur = $data['umur'];
-        $jenisKelamin = $data['jenisKelamin'];
-        $results = [];
-
-        // Estimasi BB Dewasa dari LILA (Rumus CHUMLEA)
-        if ($umur >= 18 && $umur < 60) {
-            if ($jenisKelamin === 'pria') {
-                $bb = (1.19 * $lila) + (1.48 * $data['tinggi']) - 162.31;
-            } else {
-                $bb = (1.01 * $lila) + (1.09 * $data['tinggi']) - 127.24;
-            }
-            $results['dewasa'] = round($bb, 2);
-        }
-
-        // Estimasi BB Anak dari LILA
-        if ($umur < 18 && $umur >= 1) {
-            // Simplified formula for children
-            $bb = ($lila - 8) * 2.5;
-            $results['anak'] = round($bb, 2);
-        }
-
-        // Estimasi BB Lansia dari LILA (>60 tahun)
-        if ($umur >= 60) {
-            if ($jenisKelamin === 'pria') {
-                $bb = (0.98 * $lila) + (1.16 * $data['tinggi']) - 91.45;
-            } else {
-                $bb = (1.27 * $lila) + (0.87 * $data['tinggi']) - 102.19;
-            }
-            $results['lansia'] = round($bb, 2);
-        }
+        // Rumus: IBW + 0.25(ABW - IBW)
+        $adjusted = $beratIdeal + (0.25 * ($beratAktual - $beratIdeal));
 
         return [
-            'estimasi' => $results,
-            'penjelasan' => 'Estimasi berat badan berdasarkan LILA menggunakan rumus Chumlea.',
-            'akurasi' => 'Estimasi ini memiliki margin error ±10-15%'
+            'digunakan' => true,
+            'nilai' => round($adjusted, 1),
+            'penjelasan' => 'Untuk obesitas, digunakan Adjusted Ideal Body Weight dalam menghitung kebutuhan nutrisi agar tidak berlebihan.'
         ];
     }
 
-    private function estimateWeightFromUlna($data)
+    /**
+     * Generate rekomendasi
+     */
+    private function generateRecommendations($results, $data)
     {
-        if (empty($data['ulna'])) {
-            return null;
-        }
-
-        $ulna = $data['ulna'];
-        $umur = $data['umur'];
-        $jenisKelamin = $data['jenisKelamin'];
-
-        // Estimasi tinggi badan dari panjang ulna (untuk verifikasi)
-        if ($jenisKelamin === 'pria') {
-            $tinggiEstimasi = (4.605 * $ulna) + 1.308 * $umur + 28.003;
-        } else {
-            $tinggiEstimasi = (4.459 * $ulna) + 1.315 * $umur + 31.485;
-        }
-
-        return [
-            'tinggiEstimasi' => round($tinggiEstimasi, 2),
-            'tinggiAktual' => $data['tinggi'],
-            'selisih' => round(abs($tinggiEstimasi - $data['tinggi']), 2),
-            'penjelasan' => 'Estimasi tinggi badan dari panjang ulna dapat digunakan untuk pasien yang tidak bisa berdiri.',
-            'akurasi' => 'Akurasi estimasi ±3-5 cm'
-        ];
-    }
-
-    private function estimateHeightFromKnee($data)
-    {
-        if (empty($data['tinggiLutut'])) {
-            return null;
-        }
-
-        $tinggiLutut = $data['tinggiLutut'];
-        $umur = $data['umur'];
-        $jenisKelamin = $data['jenisKelamin'];
-
-        // Rumus Chumlea untuk estimasi tinggi dari tinggi lutut
-        if ($jenisKelamin === 'pria') {
-            $tinggiEstimasi = (2.02 * $tinggiLutut) - (0.04 * $umur) + 64.19;
-        } else {
-            $tinggiEstimasi = (1.83 * $tinggiLutut) - (0.24 * $umur) + 84.88;
-        }
-
-        return [
-            'estimasi' => round($tinggiEstimasi, 2),
-            'tinggiAktual' => $data['tinggi'],
-            'selisih' => round(abs($tinggiEstimasi - $data['tinggi']), 2),
-            'penjelasan' => 'Estimasi tinggi badan dari tinggi lutut untuk pasien bedridden.',
-            'metode' => 'Chumlea Formula'
-        ];
-    }
-
-    private function generateRecommendations($data)
-    {
-        $imt = $this->calculateIMT($data);
         $recommendations = [];
+        $imt = $results['imt']['nilai'];
+        $status = $results['imt']['status'];
 
-        // Rekomendasi berdasarkan IMT
-        if ($imt['nilai'] < 18.5) {
-            $recommendations[] = [
-                'kategori' => 'Peningkatan Berat Badan',
-                'saran' => [
-                    'Tingkatkan asupan kalori 500-750 kkal/hari',
-                    'Konsumsi makanan tinggi protein (daging, telur, kacang)',
-                    'Makan dalam porsi kecil tapi sering (5-6x sehari)',
-                    'Tambahkan cemilan sehat tinggi kalori',
-                    'Konsultasi dengan ahli gizi untuk program weight gain'
-                ]
+        // Rekomendasi umum berdasarkan IMT
+        $rekomendasiIMT = [
+            'kategori' => '📊 Rekomendasi Berdasarkan Status Gizi',
+            'saran' => []
+        ];
+
+        if ($imt < 18.5) {
+            $rekomendasiIMT['saran'] = [
+                'Tingkatkan asupan kalori harian secara bertahap',
+                'Konsumsi makanan tinggi protein (daging, telur, susu, kacang-kacangan)',
+                'Makan lebih sering dengan porsi kecil (5-6 kali sehari)',
+                'Tambahkan snack sehat di antara waktu makan',
+                'Konsultasi dengan ahli gizi untuk program peningkatan berat badan',
+                'Cek kesehatan untuk memastikan tidak ada masalah metabolik'
             ];
-        } else if ($imt['nilai'] >= 25) {
-            $recommendations[] = [
-                'kategori' => 'Penurunan Berat Badan',
-                'saran' => [
-                    'Kurangi asupan kalori 500-750 kkal/hari',
-                    'Tingkatkan konsumsi sayur dan buah',
-                    'Batasi makanan tinggi gula dan lemak jenuh',
-                    'Olahraga teratur minimal 150 menit/minggu',
-                    'Hindari minuman manis dan fast food',
-                    'Konsultasi dengan ahli gizi untuk program diet sehat'
-                ]
+        } elseif ($imt >= 18.5 && $imt < 25) {
+            $rekomendasiIMT['saran'] = [
+                'Pertahankan pola makan sehat dan seimbang',
+                'Konsumsi 3 kali makan utama dan 2 kali snack',
+                'Olahraga teratur minimal 30 menit, 5 hari/minggu',
+                'Minum air putih minimal 8 gelas per hari',
+                'Perbanyak konsumsi sayur dan buah',
+                'Batasi makanan tinggi gula dan lemak jenuh'
+            ];
+        } else {
+            $rekomendasiIMT['saran'] = [
+                'Kurangi asupan kalori secara bertahap (defisit 500 kkal/hari)',
+                'Tingkatkan aktivitas fisik menjadi 45-60 menit per hari',
+                'Hindari makanan tinggi gula, garam, dan lemak',
+                'Perbanyak konsumsi sayur, buah, dan protein tanpa lemak',
+                'Makan dengan porsi lebih kecil tapi lebih sering',
+                'Konsultasi dengan dokter/ahli gizi untuk program penurunan berat badan'
             ];
         }
 
-        // Rekomendasi nutrisi spesifik
-        $recommendations[] = $this->getNutrientRecommendations($data);
+        $recommendations[] = $rekomendasiIMT;
 
-        // Rekomendasi aktivitas fisik
-        $recommendations[] = $this->getPhysicalActivityRecommendations($data);
-
-        // Rekomendasi berdasarkan kondisi kesehatan
+        // Rekomendasi berdasarkan penyakit
         if (!empty($data['penyakit'])) {
-            $recommendations[] = $this->getDiseaseSpecificRecommendations($data['penyakit']);
+            $penyakit = strtolower($data['penyakit']);
+            
+            if (strpos($penyakit, 'diabet') !== false) {
+                $recommendations[] = [
+                    'kategori' => '🩺 Rekomendasi Khusus Diabetes',
+                    'kondisi' => 'Diabetes Mellitus',
+                    'saran' => [
+                        'Batasi konsumsi karbohidrat sederhana (gula, sirup, kue manis)',
+                        'Pilih karbohidrat kompleks dengan indeks glikemik rendah',
+                        'Makan dalam porsi kecil tapi sering (5-6 kali sehari)',
+                        'Hindari buah dengan gula tinggi (pisang raja, mangga sangat matang)',
+                        'Perbanyak serat dari sayuran hijau',
+                        'Monitor gula darah secara rutin',
+                        'Olahraga teratur untuk kontrol gula darah'
+                    ]
+                ];
+            }
+            
+            if (strpos($penyakit, 'hipertensi') !== false || strpos($penyakit, 'darah tinggi') !== false) {
+                $recommendations[] = [
+                    'kategori' => '❤️ Rekomendasi Khusus Hipertensi',
+                    'kondisi' => 'Hipertensi / Tekanan Darah Tinggi',
+                    'saran' => [
+                        'Batasi konsumsi garam maksimal 1 sdt (5g) per hari',
+                        'Hindari makanan kalengan, olahan, dan fast food',
+                        'Perbanyak buah dan sayur tinggi kalium (pisang, alpukat, bayam)',
+                        'Kurangi konsumsi kafein',
+                        'Hindari makanan dengan label Na+ dan Na++',
+                        'Jaga berat badan ideal',
+                        'Olahraga aerobik teratur (jalan cepat, berenang)'
+                    ]
+                ];
+            }
+            
+            if (strpos($penyakit, 'asam urat') !== false || strpos($penyakit, 'gout') !== false) {
+                $recommendations[] = [
+                    'kategori' => '🦴 Rekomendasi Khusus Asam Urat',
+                    'kondisi' => 'Hiperurisemia / Asam Urat',
+                    'saran' => [
+                        'Hindari makanan tinggi purin (jeroan, otak, hati, ginjal)',
+                        'Batasi konsumsi daging merah dan seafood',
+                        'Hindari: sarden, kerang, udang, cumi-cumi, kepiting',
+                        'Perbanyak minum air putih (2-3 liter per hari)',
+                        'Konsumsi produk rendah lemak',
+                        'Hindari alkohol',
+                        'Perbanyak buah-buahan dan sayuran'
+                    ]
+                ];
+            }
         }
 
-        return $recommendations;
-    }
-
-    private function getNutrientRecommendations($data)
-    {
-        $umur = $data['umur'];
-        $jenisKelamin = $data['jenisKelamin'];
-        $berat = $data['berat'];
-
-        // Kebutuhan protein (g/kg BB)
-        $proteinPerKg = 0.8;
-        if ($umur >= 65) $proteinPerKg = 1.0;
-        if (!empty($data['penyakit']) && str_contains(strtolower($data['penyakit']), 'ginjal')) {
-            $proteinPerKg = 0.6;
-        }
-
-        $protein = round($berat * $proteinPerKg, 1);
-
-        return [
-            'kategori' => 'Kebutuhan Nutrisi Harian',
+        // Rekomendasi nutrisi detail
+        $kebutuhanGizi = $results['kebutuhanGizi'];
+        $recommendations[] = [
+            'kategori' => '🍎 Kebutuhan Nutrisi Harian',
             'detail' => [
-                'Protein' => $protein . ' gram/hari',
-                'Karbohidrat' => '45-65% dari total kalori',
-                'Lemak' => '20-35% dari total kalori',
-                'Serat' => '25-30 gram/hari',
-                'Air' => '8-10 gelas/hari (2-2.5 liter)'
+                'Total Kalori' => number_format($kebutuhanGizi['totalKalori']) . ' kkal',
+                'Karbohidrat' => $kebutuhanGizi['karbohidrat']['gram'] . 'g (' . round($kebutuhanGizi['karbohidrat']['persentase']) . '%)',
+                'Protein' => $kebutuhanGizi['protein']['gram'] . 'g (' . round($kebutuhanGizi['protein']['persentase']) . '%)',
+                'Lemak' => $kebutuhanGizi['lemak']['gram'] . 'g (' . round($kebutuhanGizi['lemak']['persentase']) . '%)'
             ],
             'sumber' => [
-                'Protein' => 'Daging tanpa lemak, ikan, telur, tahu, tempe, kacang-kacangan',
-                'Karbohidrat' => 'Nasi merah, roti gandum, oatmeal, kentang, ubi',
-                'Lemak Sehat' => 'Alpukat, kacang, minyak zaitun, ikan salmon',
-                'Serat' => 'Sayuran hijau, buah-buahan, biji-bijian utuh',
-                'Vitamin & Mineral' => 'Buah dan sayur beragam warna'
+                'Karbohidrat' => 'Nasi, roti gandum, kentang, ubi, oatmeal, pasta',
+                'Protein' => 'Ayam, ikan, telur, tempe, tahu, kacang-kacangan, susu',
+                'Lemak Sehat' => 'Minyak zaitun, alpukat, kacang almond, ikan salmon'
             ]
         ];
-    }
 
-    private function getPhysicalActivityRecommendations($data)
-    {
-        $umur = $data['umur'];
-        $imt = $this->calculateIMT($data);
-
-        $recommendations = [];
-
-        if ($umur < 18) {
-            $recommendations = [
-                'Minimal 60 menit aktivitas fisik sedang-berat per hari',
-                'Aktivitas aerobik seperti berlari, bersepeda, berenang',
-                'Latihan kekuatan otot 3x seminggu',
-                'Batasi screen time maksimal 2 jam/hari'
-            ];
-        } else if ($umur >= 65) {
-            $recommendations = [
-                'Minimal 150 menit aktivitas aerobik ringan-sedang per minggu',
-                'Jalan kaki, senam, tai chi, atau berenang',
-                'Latihan keseimbangan untuk mencegah jatuh',
-                'Latihan fleksibilitas dan peregangan',
-                'Konsultasi dokter sebelum memulai program olahraga baru'
-            ];
-        } else {
-            $recommendations = [
-                'Minimal 150 menit aktivitas aerobik sedang per minggu',
-                'Atau 75 menit aktivitas berat per minggu',
-                'Latihan kekuatan otot 2-3x seminggu',
-                'Kombinasi kardio (jalan cepat, jogging) dan strength training',
-                'Peregangan dan cooling down setelah berolahraga'
+        // Rekomendasi untuk lansia
+        if ($data['umur'] >= 60) {
+            $recommendations[] = [
+                'kategori' => '👴 Rekomendasi Khusus Lansia',
+                'saran' => [
+                    'Tingkatkan asupan protein (1.0-1.2 g/kg BB) untuk mencegah sarcopenia',
+                    'Konsumsi makanan lunak yang mudah dikunyah dan dicerna',
+                    'Perbanyak makanan tinggi kalsium dan vitamin D untuk kesehatan tulang',
+                    'Minum air yang cukup meski tidak haus',
+                    'Konsumsi makanan tinggi serat untuk mencegah konstipasi',
+                    'Makan dalam porsi kecil tapi sering',
+                    'Lakukan aktivitas fisik ringan secara teratur'
+                ]
             ];
         }
 
-        return [
-            'kategori' => 'Aktivitas Fisik',
-            'saran' => $recommendations
-        ];
-    }
-
-    private function getDiseaseSpecificRecommendations($penyakit)
-    {
-        $penyakit = strtolower($penyakit);
-        $recommendations = [];
-
-        if (str_contains($penyakit, 'diabetes')) {
-            $recommendations = [
-                'Kontrol asupan karbohidrat (pilih karbohidrat kompleks)',
-                'Hindari gula sederhana dan makanan tinggi glikemik',
-                'Makan dalam porsi kecil dengan jadwal teratur',
-                'Monitor gula darah secara rutin',
-                'Konsumsi serat tinggi untuk kontrol gula darah'
-            ];
-        } else if (str_contains($penyakit, 'hipertensi') || str_contains($penyakit, 'darah tinggi')) {
-            $recommendations = [
-                'Batasi asupan natrium/garam (<2300 mg/hari)',
-                'Tingkatkan konsumsi kalium (pisang, kentang, bayam)',
-                'Diet DASH (Dietary Approaches to Stop Hypertension)',
-                'Hindari makanan olahan dan kalengan',
-                'Kurangi konsumsi kafein'
-            ];
-        } else if (str_contains($penyakit, 'kolesterol')) {
-            $recommendations = [
-                'Batasi lemak jenuh dan trans fat',
-                'Tingkatkan konsumsi lemak tak jenuh (omega-3)',
-                'Konsumsi makanan tinggi serat larut (oatmeal, kacang)',
-                'Hindari gorengan dan makanan berlemak tinggi',
-                'Makan ikan minimal 2x seminggu'
-            ];
-        } else if (str_contains($penyakit, 'ginjal')) {
-            $recommendations = [
-                'Batasi protein sesuai anjuran dokter',
-                'Kontrol asupan natrium, kalium, dan fosfor',
-                'Batasi cairan jika ada retensi',
-                'Hindari makanan tinggi purin',
-                'Konsultasi rutin dengan dietitian ginjal'
-            ];
-        } else {
-            $recommendations = [
-                'Konsultasikan kondisi kesehatan dengan dokter',
-                'Ikuti diet sesuai rekomendasi tenaga medis',
-                'Monitor kondisi kesehatan secara rutin'
-            ];
-        }
-
-        return [
-            'kategori' => 'Rekomendasi Khusus Kondisi Kesehatan',
-            'kondisi' => ucfirst($penyakit),
-            'saran' => $recommendations
-        ];
-    }
-
-    public function getRecommendations(Request $request)
-    {
-        $data = $request->all();
-        $recommendations = $this->generateRecommendations($data);
-        
-        return response()->json([
-            'recommendations' => $recommendations,
-            'educationalContent' => $this->getEducationalContent()
-        ]);
-    }
-
-    private function getEducationalContent()
-    {
-        return [
-            'imt' => [
-                'judul' => 'Apa itu IMT (Indeks Massa Tubuh)?',
-                'definisi' => 'IMT adalah ukuran yang digunakan untuk menilai status gizi seseorang berdasarkan perbandingan berat badan dan tinggi badan.',
-                'rumus' => 'IMT = Berat Badan (kg) / (Tinggi Badan (m))²',
-                'kegunaan' => 'Untuk mengidentifikasi kelebihan atau kekurangan berat badan yang dapat meningkatkan risiko masalah kesehatan.',
-                'keterbatasan' => 'IMT tidak membedakan antara massa otot dan lemak, sehingga atlet dengan otot banyak bisa dikategorikan overweight.'
-            ],
-            'lila' => [
-                'judul' => 'Apa itu LILA (Lingkar Lengan Atas)?',
-                'definisi' => 'LILA adalah pengukuran lingkar lengan atas bagian tengah yang digunakan untuk menilai status gizi, terutama untuk deteksi malnutrisi.',
-                'cara_ukur' => 'Diukur pada titik tengah antara ujung bahu (akromion) dan siku (olekranon) menggunakan pita ukur.',
-                'kegunaan' => 'Screening cepat untuk malnutrisi, khususnya pada ibu hamil, balita, dan lansia. Dapat digunakan saat pengukuran tinggi/berat badan sulit dilakukan.',
-                'cut_off' => 'Dewasa: <23 cm (pria), <22 cm (wanita) = KEK (Kurang Energi Kronis). Balita: <11.5 cm = Gizi Buruk.'
-            ],
-            'ulna' => [
-                'judul' => 'Apa itu Panjang ULNA?',
-                'definisi' => 'Ulna adalah tulang lengan bawah yang panjangnya dapat digunakan untuk memperkirakan tinggi badan seseorang.',
-                'cara_ukur' => 'Diukur dari ujung siku (olekranon) hingga ujung tulang pergelangan tangan (styloid process) dengan lengan membentuk sudut 90°.',
-                'kegunaan' => 'Mengestimasi tinggi badan pada pasien yang tidak bisa berdiri (bedrest, kyphosis, amputasi tungkai).',
-                'akurasi' => 'Memiliki korelasi tinggi dengan tinggi badan sebenarnya, dengan margin error ±3-5 cm.'
-            ],
-            'antropometri' => [
-                'judul' => 'Pengukuran Antropometri',
-                'definisi' => 'Antropometri adalah pengukuran dimensi tubuh dan komposisi tubuh manusia.',
-                'jenis_pengukuran' => [
-                    'Tinggi Badan' => 'Mengukur panjang tubuh dari ujung kepala hingga telapak kaki',
-                    'Berat Badan' => 'Mengukur massa tubuh total',
-                    'LILA' => 'Lingkar lengan atas untuk status gizi',
-                    'Lingkar Betis' => 'Indikator massa otot, terutama pada lansia',
-                    'Tinggi Lutut' => 'Untuk estimasi tinggi badan pada pasien bedridden',
-                    'Tebal Lipatan Kulit' => 'Mengukur lemak subkutan'
-                ],
-                'kegunaan' => 'Menilai status gizi, pertumbuhan, komposisi tubuh, dan risiko penyakit terkait gizi.'
+        // Tips umum
+        $recommendations[] = [
+            'kategori' => '💡 Tips Penting',
+            'saran' => [
+                'Makan teratur 3 kali sehari dengan 2-3 kali snack',
+                'Minum air putih minimal 8 gelas (2 liter) per hari',
+                'Variasikan menu untuk nutrisi lengkap',
+                'Batasi gula, garam, dan lemak jenuh',
+                'Tingkatkan konsumsi sayur dan buah (5 porsi/hari)',
+                'Olahraga teratur minimal 150 menit per minggu',
+                'Tidur cukup 7-8 jam per malam',
+                'Kelola stres dengan baik',
+                'Hindari merokok dan alkohol',
+                'Konsultasi rutin dengan ahli gizi/dokter'
             ]
         ];
+
+        return $recommendations;
     }
 }

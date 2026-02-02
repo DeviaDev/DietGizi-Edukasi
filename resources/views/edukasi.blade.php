@@ -130,7 +130,7 @@
                 <div class="card diet-card shadow-sm h-100">
                     <div class="card-body p-4">
                         <div class="diet-icon" style="background: linear-gradient(135deg, #f39c12, #e67e22);">
-                            <i class="fas fa-kidneys fa-2x text-white"></i>
+                            <i class="fas fa-ban fa-2x text-white"></i>
                         </div>
                         <h4 class="text-center mb-3">Diet Rendah Protein</h4>
                         <span class="badge badge-custom mb-3 d-block text-center" style="background: #f39c12; color: white;">Ginjal</span>

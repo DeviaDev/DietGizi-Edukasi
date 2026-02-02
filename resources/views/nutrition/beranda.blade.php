@@ -34,7 +34,7 @@
         </div>
 
         <div class="col-lg-6 text-center mt-1 mt-lg-0">
-            <img src="{{ asset('storage/foto.jpg') }}"
+            <img src="{{ asset('storage/fotobg.jpg') }}"
                  class="img-fluid rounded-4 shadow-sm w-80"
                  alt="Healthy Lifestyle"  style="max-width: 450px; width: 100%; height: auto;">
         </div>
@@ -86,7 +86,7 @@
     </div>
 
     {{-- ARTIKEL --}}
-    <div class="row">
+    {{-- <div class="row">
         <div class="col-12 mb-4">
             <h4 class="fw-bold">📰 Artikel Kesehatan</h4>
             <p class="text-muted">Baca tips dan panduan gizi terbaru</p>
@@ -139,7 +139,7 @@
                 </div>
             </div>
         </div>
-    </div>
+    </div> --}}
 
 </div>
 @endsection
