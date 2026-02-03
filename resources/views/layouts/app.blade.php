@@ -211,10 +211,10 @@
                     <h5 class="mb-3"><i class="fas fa-utensils me-2"></i>DietGizi</h5>
                     <p>Platform edukasi gizi terpercaya untuk membantu Anda mencapai gaya hidup sehat dan seimbang.</p>
                     <div class="social-links mt-3">
-                        <a href="#"><i class="fab fa-facebook-f"></i></a>
-                        <a href="#"><i class="fab fa-twitter"></i></a>
-                        <a href="#"><i class="fab fa-instagram"></i></a>
-                        <a href="#"><i class="fab fa-youtube"></i></a>
+                        <a href="https://www.facebook.com/" target="_blank"><i class="fab fa-facebook-f"></i></a>
+                        <a href="https://x.com/" target="_blank"><i class="fab fa-twitter"></i></a>
+                        <a href="https://www.instagram.com/" target="_blank"><i class="fab fa-instagram"></i></a>
+                        <a href="https://www.youtube.com/" target="_blank"><i class="fab fa-youtube"></i></a>
                     </div>
                 </div>
                 <div class="col-lg-2 col-md-6 mb-4">
@@ -229,8 +229,8 @@
                 <div class="col-lg-3 col-md-6 mb-4">
                     <h6 class="mb-3">Layanan</h6>
                     <ul class="list-unstyled">
-                        <li class="mb-2"><a href="login">Konsultasi Gizi</a></li>
-                        <li class="mb-2"><a href="login">Program Diet</a></li>
+                        <li class="mb-2"><a href="login">Cek Status Gizi</a></li>
+                        <li class="mb-2"><a href="login">Panduan Gizi</a></li>
                         {{-- <li class="mb-2"><a href="#">Artikel Kesehatan</a></li>
                         <li class="mb-2"><a href="#">FAQ</a></li> --}}
                     </ul>

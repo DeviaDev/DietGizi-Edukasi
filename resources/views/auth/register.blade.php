@@ -326,9 +326,9 @@
     </div>
 
     <!-- Help Icon -->
-    <div class="help-icon">
+    {{-- <div class="help-icon">
         <i class="fas fa-question"></i>
-    </div>
+    </div> --}}
 </section>
 
 
